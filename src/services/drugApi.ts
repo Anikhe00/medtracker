@@ -168,17 +168,28 @@ function pickBestResult(results: any[], queried: string, field: string): any | n
   return results[0] ?? null;
 }
 
+async function fetchLabelsByField(trimmed: string, field: string, signal?: AbortSignal): Promise<any[] | null> {
+  const query = `openfda.${field}:"${trimmed}"`;
+  const url = `${OPENFDA_BASE}?search=${encodeURIComponent(query)}&limit=15`;
+  const res = await safeFetch(url, signal);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new DrugApiError(`openFDA lookup failed (${res.status})`);
+  const data = await res.json();
+  const results = data?.results;
+  return results && results.length > 0 ? results : null;
+}
+
 async function fetchFromLiveApi(trimmed: string, signal?: AbortSignal): Promise<DrugSafetyInfo | null> {
   const fields = ["generic_name", "brand_name", "substance_name"];
-  for (const field of fields) {
-    const query = `openfda.${field}:"${trimmed}"`;
-    const url = `${OPENFDA_BASE}?search=${encodeURIComponent(query)}&limit=15`;
-    const res = await safeFetch(url, signal);
-    if (res.status === 404) continue;
-    if (!res.ok) throw new DrugApiError(`openFDA lookup failed (${res.status})`);
-    const data = await res.json();
-    const results = data?.results;
-    if (!results || results.length === 0) continue;
+  // Ask for all three at once rather than one after another, so a brand name
+  // like "Tylenol" doesn't wait on a failed generic-name search first. The
+  // answers are still read in priority order.
+  const lookups = fields.map((field) => fetchLabelsByField(trimmed, field, signal));
+  lookups.forEach((p) => p.catch(() => {}));
+  for (let i = 0; i < fields.length; i++) {
+    const results = await lookups[i];
+    if (!results) continue;
+    const field = fields[i];
     const best = pickBestResult(results, trimmed, field === "substance_name" ? "generic_name" : field);
     if (!best) continue;
     return parseLabel(trimmed, best);
@@ -194,10 +205,24 @@ async function fetchFromLiveApi(trimmed: string, signal?: AbortSignal): Promise<
  * label on file for this name — a real, expected outcome for less common
  * names, not an error.
  */
-export async function fetchDrugSafetyInfo(name: string, signal?: AbortSignal): Promise<DrugSafetyInfo | null> {
-  const trimmed = coreDrugName(name).replace(/"/g, "");
-  if (!trimmed) return null;
+const safetyInfoCache = new Map<string, Promise<DrugSafetyInfo | null>>();
 
+export function fetchDrugSafetyInfo(name: string, signal?: AbortSignal): Promise<DrugSafetyInfo | null> {
+  const trimmed = coreDrugName(name).replace(/"/g, "");
+  if (!trimmed) return Promise.resolve(null);
+
+  // Labels don't change while the app is open, and every check re-reads the
+  // label of each medication already in the profile, so remember them.
+  const key = trimmed.toLowerCase();
+  const cached = safetyInfoCache.get(key);
+  if (cached) return cached;
+  const pending = lookupDrugSafetyInfo(trimmed, signal);
+  safetyInfoCache.set(key, pending);
+  pending.catch(() => safetyInfoCache.delete(key));
+  return pending;
+}
+
+async function lookupDrugSafetyInfo(trimmed: string, signal?: AbortSignal): Promise<DrugSafetyInfo | null> {
   try {
     const live = await fetchFromLiveApi(trimmed, signal);
     return live ?? lookupBundledFallback(trimmed);

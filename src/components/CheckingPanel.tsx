@@ -8,6 +8,8 @@ const STEPS = [
   "Checking against {conditions} medical conditions",
 ];
 
+const STEP_MS = 150;
+
 export default function CheckingPanel({
   items,
   medicationCount,
@@ -24,10 +26,12 @@ export default function CheckingPanel({
   const [completed, setCompleted] = useState(0);
 
   useEffect(() => {
+    // Just long enough for the steps to read as progress. onDone waits for the
+    // real check, so this only sets the minimum time on screen.
     const timers = STEPS.map((_, i) =>
-      setTimeout(() => setCompleted(i + 1), (i + 1) * 500),
+      setTimeout(() => setCompleted(i + 1), (i + 1) * STEP_MS),
     );
-    const finish = setTimeout(onDone, STEPS.length * 500 + 500);
+    const finish = setTimeout(onDone, STEPS.length * STEP_MS + STEP_MS);
     return () => {
       timers.forEach(clearTimeout);
       clearTimeout(finish);
