@@ -1,5 +1,3 @@
-import type { Severity } from "../types";
-
 // FDA label wording mapped to what it means for the person taking the
 // medicines, in everyday words. Ordered roughly by how serious the effect is,
 // so the most important reason is shown first.
@@ -88,10 +86,3 @@ export function genericReason(pair: string): string {
     : "The official drug label warns about taking these together.";
 }
 
-/** The short answer to "Can I take these together?". */
-export const VERDICT: Record<Severity, string> = {
-  major: "No, don't take these together",
-  moderate: "Check with your doctor first",
-  minor: "Usually OK to take together",
-  unresolved: "Not sure yet",
-};

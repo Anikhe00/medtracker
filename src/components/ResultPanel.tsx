@@ -8,28 +8,19 @@ import trashIcon from "../assets/icons/trash-bin.svg";
 import shieldCheckIcon from "../assets/icons/shield-check.svg";
 import ConfirmDeleteModal from "./ConfirmDeleteModal";
 import SeverityBadge, { SEVERITY_GUIDANCE } from "./SeverityBadge";
-import { VERDICT, genericReason, plainEffects } from "../lib/plainLanguage";
-import type { ConflictItem, ResultData, Decision, Severity } from "../types";
+import { genericReason, plainEffects } from "../lib/plainLanguage";
+import type { ConflictItem, ResultData, Decision } from "../types";
 
 export type { ResultData };
 
-// Nigeria's national emergency number, unified across all networks by the
-// NCC. Not a stand-in for a specific provider's number, which the app has no
-// way to know.
-const EMERGENCY_TEL = "112";
+// Nigeria's national emergency number. The call button was removed, but
+// older saved checks can still carry the "contact-provider" decision.
 const EMERGENCY_DISPLAY = "112";
 
 const DECISION_LABEL: Record<Decision, string> = {
   proceed: "You chose to proceed",
   "contact-provider": `Called Emergency Services (${EMERGENCY_DISPLAY})`,
   cancel: "You chose not to add this",
-};
-
-const VERDICT_COLOR: Record<Severity, string> = {
-  major: "text-[#c10007]",
-  moderate: "text-[#c2410c]",
-  minor: "text-[#a16207]",
-  unresolved: "text-slate-700",
 };
 
 /** Plain-language reasons, falling back to reading the label text for checks saved before reasons were stored. */
@@ -43,7 +34,6 @@ function buildCopyText(data: ResultData): string {
   if (data.outcome === "found" && data.conflicts) {
     for (const c of data.conflicts) {
       lines.push(c.pair);
-      lines.push(`Can I take these together? ${VERDICT[c.severity]}.`);
       lines.push(SEVERITY_GUIDANCE[c.severity]);
       lines.push(`Why: ${reasonsFor(c).join(" ")}`);
       lines.push("");
@@ -173,9 +163,6 @@ export default function ResultPanel({
               </button>
             )}
           </div>
-          <p className="max-w-[220px] text-right text-[11px] text-slate-400">
-            If Print doesn't open a dialog, use Ctrl+P (Windows) or Cmd+P (Mac) instead.
-          </p>
           {copyState === "failed" && (
             <p className="max-w-[220px] text-right text-[11px] text-[#e7000b]">
               Couldn't copy automatically. Select the result text and copy it manually.
@@ -203,12 +190,6 @@ export default function ResultPanel({
                 <div className="flex w-full items-center gap-2">
                   <p className="flex-1 text-sm font-medium text-slate-800">{c.pair}</p>
                   <SeverityBadge severity={c.severity} />
-                </div>
-                <div className="flex flex-col gap-0.5">
-                  <p className="text-[10px] font-semibold uppercase text-slate-500">
-                    Can I take these together?
-                  </p>
-                  <p className={`text-base font-bold ${VERDICT_COLOR[c.severity]}`}>{VERDICT[c.severity]}</p>
                 </div>
                 <p className="text-sm leading-5 text-slate-700">{SEVERITY_GUIDANCE[c.severity]}</p>
                 <div className="flex flex-col gap-0.5">
@@ -281,15 +262,6 @@ export default function ResultPanel({
                   >
                     <span className="text-sm font-semibold text-slate-700">Proceed anyway</span>
                   </button>
-                  <a
-                    href={`tel:${EMERGENCY_TEL}`}
-                    onClick={() => onDecide?.("contact-provider")}
-                    className="flex items-center gap-1.5 rounded-lg bg-teal-700 px-3 py-2 shadow-xs"
-                  >
-                    <span className="text-sm font-semibold text-white">
-                      Call Emergency Services ({EMERGENCY_DISPLAY})
-                    </span>
-                  </a>
                   <button
                     type="button"
                     onClick={() => onDecide?.("cancel")}
@@ -298,10 +270,6 @@ export default function ResultPanel({
                     <span className="text-sm font-semibold text-[#e7000b]">Cancel</span>
                   </button>
                 </div>
-                <p className="text-[11px] text-slate-500">
-                  112 is Nigeria's national emergency number, for urgent medical situations. It is
-                  not your personal doctor's office.
-                </p>
               </div>
             )}
           </div>
