@@ -1,5 +1,6 @@
 import { fetchDrugSafetyInfo, DrugApiError, type DrugSafetyInfo } from "../services/drugApi";
 import { classesFor, coreDrugName } from "./drugNames";
+import { plainEffects } from "./plainLanguage";
 import type { ConflictItem, LogEntry, ResultData, Severity } from "../types";
 
 const SEVERITY_RANK: Record<Severity, number> = { major: 3, moderate: 2, minor: 1, unresolved: 0 };
@@ -32,9 +33,27 @@ function labelSentences(text: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Label "sentences" are often a whole section run together (e.g. "Diuretics:
+ * ... ( 7.1 ) NSAIDS: ... ( 7.3 )"), so the plain-language reason is read from
+ * just the clause that mentions the other drug.
+ */
+function clauseAt(sentence: string, index: number): string {
+  const boundary = /\(\s*\d+(?:\.\d+)*(?:\s*,\s*\d+(?:\.\d+)*)*\s*\)|;|\s•\s/g;
+  let start = 0;
+  for (const m of sentence.matchAll(boundary)) {
+    const end = m.index ?? 0;
+    if (end >= index) return sentence.slice(start, end);
+    start = end + m[0].length;
+  }
+  return sentence.slice(start);
+}
+
 interface Hit {
   severity: Severity;
   sentence: string;
+  /** The clause of `sentence` that mentions the other drug. */
+  focus: string;
   section: string;
   via: string;
 }
@@ -56,19 +75,22 @@ function findHit(info: DrugSafetyInfo, otherName: string, otherInfo: DrugSafetyI
     for (const sentence of labelSentences(section.text)) {
       const lower = sentence.toLowerCase();
       let via: string | null = null;
+      let at = 0;
       for (const n of nameTerms) {
-        if (new RegExp(`\\b${escapeRegExp(n)}`, "i").test(lower)) { via = n; break; }
+        const m = new RegExp(`\\b${escapeRegExp(n)}`, "i").exec(lower);
+        if (m) { via = n; at = m.index; break; }
       }
       if (!via) {
         for (const { t, label } of classTerms) {
           if (t.length < 3) continue;
-          if (new RegExp(`\\b${escapeRegExp(t)}\\b`, t === t.toUpperCase() ? "" : "i").test(sentence)) { via = label; break; }
+          const m = new RegExp(`\\b${escapeRegExp(t)}\\b`, t === t.toUpperCase() ? "" : "i").exec(sentence);
+          if (m) { via = label; at = m.index; break; }
         }
       }
       if (!via) continue;
       if (selfClasses.size && classesFor(otherName).every((c) => selfClasses.has(c.key)) && !nameTerms.some((n) => lower.includes(n))) continue;
       const sev = severityForSentence(section.severity, sentence);
-      const hit: Hit = { severity: sev, sentence: sentence.length > 700 ? sentence.slice(0, 700).replace(/\s+\S*$/, "") + "." : sentence, section: section.label, via };
+      const hit: Hit = { severity: sev, focus: clauseAt(sentence, at), sentence: sentence.length > 700 ? sentence.slice(0, 700).replace(/\s+\S*$/, "") + "." : sentence, section: section.label, via };
       const named = nameTerms.includes(via);
       if (named && (!bestNamed || SEVERITY_RANK[sev] > SEVERITY_RANK[bestNamed.severity])) bestNamed = hit;
       if (!best || SEVERITY_RANK[sev] > SEVERITY_RANK[best.severity]) best = hit;
@@ -172,11 +194,14 @@ export async function checkMedicationsAgainstProfile(
         .map((h) => (hits.length > 1 ? `${h.from} label: ${h.hit.sentence}` : h.hit.sentence))
         .join("\n\n");
       const other = strongest.from === a ? b : a;
+      // Strongest hit first, so its reason leads.
+      const reasons = plainEffects(hits.map((h) => h.hit.focus).join(" "));
       return {
         pair: `${a} + ${b}`,
         severity,
         headline: `${strongest.from}'s label mentions ${strongest.hit.via === coreDrugName(other) ? other : strongest.hit.via} in its ${strongest.hit.section.toLowerCase()}`,
         detail,
+        reasons,
       };
     });
     conflicts.sort((x, y) => SEVERITY_RANK[y.severity] - SEVERITY_RANK[x.severity]);

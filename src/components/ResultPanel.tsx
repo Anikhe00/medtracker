@@ -8,14 +8,13 @@ import trashIcon from "../assets/icons/trash-bin.svg";
 import shieldCheckIcon from "../assets/icons/shield-check.svg";
 import ConfirmDeleteModal from "./ConfirmDeleteModal";
 import SeverityBadge, { SEVERITY_GUIDANCE } from "./SeverityBadge";
-import type { ResultData, Decision } from "../types";
+import { genericReason, plainEffects } from "../lib/plainLanguage";
+import type { ConflictItem, ResultData, Decision } from "../types";
 
 export type { ResultData };
 
-// Nigeria's national emergency number, unified across all networks by the
-// NCC. Not a stand-in for a specific provider's number, which the app has no
-// way to know.
-const EMERGENCY_TEL = "112";
+// Nigeria's national emergency number. The call button was removed, but
+// older saved checks can still carry the "contact-provider" decision.
 const EMERGENCY_DISPLAY = "112";
 
 const DECISION_LABEL: Record<Decision, string> = {
@@ -24,14 +23,19 @@ const DECISION_LABEL: Record<Decision, string> = {
   cancel: "You chose not to add this",
 };
 
+/** Plain-language reasons, falling back to reading the label text for checks saved before reasons were stored. */
+function reasonsFor(c: ConflictItem): string[] {
+  const reasons = c.reasons ?? plainEffects(c.detail);
+  return reasons.length > 0 ? reasons : [genericReason(c.pair)];
+}
+
 function buildCopyText(data: ResultData): string {
   const lines = [data.title, data.subtitle, ""];
   if (data.outcome === "found" && data.conflicts) {
     for (const c of data.conflicts) {
-      lines.push(`${c.pair}: ${c.severity.toUpperCase()}`);
-      lines.push(c.headline);
-      lines.push(c.detail);
-      lines.push(`What this means: ${SEVERITY_GUIDANCE[c.severity]}`);
+      lines.push(c.pair);
+      lines.push(SEVERITY_GUIDANCE[c.severity]);
+      lines.push(`Why: ${reasonsFor(c).join(" ")}`);
       lines.push("");
     }
   }
@@ -159,9 +163,6 @@ export default function ResultPanel({
               </button>
             )}
           </div>
-          <p className="max-w-[220px] text-right text-[11px] text-slate-400">
-            If Print doesn't open a dialog, use Ctrl+P (Windows) or Cmd+P (Mac) instead.
-          </p>
           {copyState === "failed" && (
             <p className="max-w-[220px] text-right text-[11px] text-[#e7000b]">
               Couldn't copy automatically. Select the result text and copy it manually.
@@ -184,22 +185,30 @@ export default function ResultPanel({
             {data.conflicts.map((c) => (
               <div
                 key={c.pair}
-                className="flex flex-col gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5"
+                className="flex flex-col gap-2.5 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3"
               >
                 <div className="flex w-full items-center gap-2">
                   <p className="flex-1 text-sm font-medium text-slate-800">{c.pair}</p>
                   <SeverityBadge severity={c.severity} />
                 </div>
-                <p className="text-xs font-medium text-slate-700">{c.headline}</p>
-                <p className="whitespace-pre-line text-xs leading-[18px] text-slate-600">{c.detail}</p>
-                <div className="mt-1 flex flex-col gap-0.5 rounded-md border border-slate-200 bg-white px-2.5 py-2">
-                  <p className="text-[10px] font-semibold uppercase text-slate-500">
-                    What this means for you
-                  </p>
-                  <p className="text-xs leading-[18px] text-slate-700">
-                    {SEVERITY_GUIDANCE[c.severity]}
-                  </p>
+                <p className="text-sm leading-5 text-slate-700">{SEVERITY_GUIDANCE[c.severity]}</p>
+                <div className="flex flex-col gap-0.5">
+                  <p className="text-[10px] font-semibold uppercase text-slate-500">Why</p>
+                  {reasonsFor(c).map((r) => (
+                    <p key={r} className="text-sm leading-5 text-slate-700">
+                      {r}
+                    </p>
+                  ))}
                 </div>
+                <details className="group mt-1 text-xs print:hidden">
+                  <summary className="cursor-pointer text-slate-500 hover:text-slate-700">
+                    Show the FDA label wording
+                  </summary>
+                  <div className="mt-1.5 flex flex-col gap-1">
+                    <p className="font-medium text-slate-600">{c.headline}</p>
+                    <p className="whitespace-pre-line leading-[18px] text-slate-500">{c.detail}</p>
+                  </div>
+                </details>
               </div>
             ))}
           </div>
@@ -253,15 +262,6 @@ export default function ResultPanel({
                   >
                     <span className="text-sm font-semibold text-slate-700">Proceed anyway</span>
                   </button>
-                  <a
-                    href={`tel:${EMERGENCY_TEL}`}
-                    onClick={() => onDecide?.("contact-provider")}
-                    className="flex items-center gap-1.5 rounded-lg bg-teal-700 px-3 py-2 shadow-xs"
-                  >
-                    <span className="text-sm font-semibold text-white">
-                      Call Emergency Services ({EMERGENCY_DISPLAY})
-                    </span>
-                  </a>
                   <button
                     type="button"
                     onClick={() => onDecide?.("cancel")}
@@ -270,10 +270,6 @@ export default function ResultPanel({
                     <span className="text-sm font-semibold text-[#e7000b]">Cancel</span>
                   </button>
                 </div>
-                <p className="text-[11px] text-slate-500">
-                  112 is Nigeria's national emergency number, for urgent medical situations. It is
-                  not your personal doctor's office.
-                </p>
               </div>
             )}
           </div>
