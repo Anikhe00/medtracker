@@ -100,6 +100,18 @@ function findHit(info: DrugSafetyInfo, otherName: string, otherInfo: DrugSafetyI
   return bestNamed ?? best;
 }
 
+const PROFILE_LOOKUP_TIMEOUT_MS = 4000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(null), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
+  });
+}
+
 export type CheckOutcome = { result: ResultData; severity: LogEntry["severity"] };
 
 /**
@@ -139,7 +151,10 @@ export async function checkMedicationsAgainstProfile(
     await Promise.all(
       all.map(async (name) => {
         try {
-          infoByName.set(name, await fetchDrugSafetyInfo(name));
+          // A slow lookup for something already in the profile shouldn't hold
+          // up the result; it's then matched by name only.
+          const lookup = fetchDrugSafetyInfo(name);
+          infoByName.set(name, uniqueItems.includes(name) ? await lookup : await withTimeout(lookup, PROFILE_LOOKUP_TIMEOUT_MS));
         } catch (err) {
           if (uniqueItems.includes(name)) throw err;
           infoByName.set(name, null);
@@ -208,7 +223,7 @@ export async function checkMedicationsAgainstProfile(
 
     const title = displayNames.join(", ") || uniqueItems.join(", ");
     const sourceLabel = anyOffline
-      ? "Source: openFDA drug label data, from a verified FDA source (live check unavailable)"
+      ? "Source: openFDA drug label data, from a saved copy of the FDA labels"
       : "Source: openFDA drug label database, checked live";
 
     if (conflicts.length > 0) {
