@@ -232,6 +232,8 @@ export default function MedicationsScreen({
           onClose={closeAddFlow}
           onConfirm={handleConfirmAdd}
           confirmLabel={`Add ${stagedCount} medication${stagedCount === 1 ? "" : "s"} to my profile`}
+          onDecline={closeAddFlow}
+          declineLabel={stagedCount === 1 ? "Don't add it" : "Don't add them"}
         />
       );
     }
