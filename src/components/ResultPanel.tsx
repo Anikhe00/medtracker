@@ -8,7 +8,8 @@ import trashIcon from "../assets/icons/trash-bin.svg";
 import shieldCheckIcon from "../assets/icons/shield-check.svg";
 import ConfirmDeleteModal from "./ConfirmDeleteModal";
 import SeverityBadge, { SEVERITY_GUIDANCE } from "./SeverityBadge";
-import type { ResultData, Decision } from "../types";
+import { VERDICT, genericReason, plainEffects } from "../lib/plainLanguage";
+import type { ConflictItem, ResultData, Decision, Severity } from "../types";
 
 export type { ResultData };
 
@@ -24,14 +25,27 @@ const DECISION_LABEL: Record<Decision, string> = {
   cancel: "You chose not to add this",
 };
 
+const VERDICT_COLOR: Record<Severity, string> = {
+  major: "text-[#c10007]",
+  moderate: "text-[#c2410c]",
+  minor: "text-[#a16207]",
+  unresolved: "text-slate-700",
+};
+
+/** Plain-language reasons, falling back to reading the label text for checks saved before reasons were stored. */
+function reasonsFor(c: ConflictItem): string[] {
+  const reasons = c.reasons ?? plainEffects(c.detail);
+  return reasons.length > 0 ? reasons : [genericReason(c.pair)];
+}
+
 function buildCopyText(data: ResultData): string {
   const lines = [data.title, data.subtitle, ""];
   if (data.outcome === "found" && data.conflicts) {
     for (const c of data.conflicts) {
-      lines.push(`${c.pair}: ${c.severity.toUpperCase()}`);
-      lines.push(c.headline);
-      lines.push(c.detail);
-      lines.push(`What this means: ${SEVERITY_GUIDANCE[c.severity]}`);
+      lines.push(c.pair);
+      lines.push(`Can I take these together? ${VERDICT[c.severity]}.`);
+      lines.push(SEVERITY_GUIDANCE[c.severity]);
+      lines.push(`Why: ${reasonsFor(c).join(" ")}`);
       lines.push("");
     }
   }
@@ -184,22 +198,36 @@ export default function ResultPanel({
             {data.conflicts.map((c) => (
               <div
                 key={c.pair}
-                className="flex flex-col gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5"
+                className="flex flex-col gap-2.5 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3"
               >
                 <div className="flex w-full items-center gap-2">
                   <p className="flex-1 text-sm font-medium text-slate-800">{c.pair}</p>
                   <SeverityBadge severity={c.severity} />
                 </div>
-                <p className="text-xs font-medium text-slate-700">{c.headline}</p>
-                <p className="whitespace-pre-line text-xs leading-[18px] text-slate-600">{c.detail}</p>
-                <div className="mt-1 flex flex-col gap-0.5 rounded-md border border-slate-200 bg-white px-2.5 py-2">
+                <div className="flex flex-col gap-0.5">
                   <p className="text-[10px] font-semibold uppercase text-slate-500">
-                    What this means for you
+                    Can I take these together?
                   </p>
-                  <p className="text-xs leading-[18px] text-slate-700">
-                    {SEVERITY_GUIDANCE[c.severity]}
-                  </p>
+                  <p className={`text-base font-bold ${VERDICT_COLOR[c.severity]}`}>{VERDICT[c.severity]}</p>
                 </div>
+                <p className="text-sm leading-5 text-slate-700">{SEVERITY_GUIDANCE[c.severity]}</p>
+                <div className="flex flex-col gap-0.5">
+                  <p className="text-[10px] font-semibold uppercase text-slate-500">Why</p>
+                  {reasonsFor(c).map((r) => (
+                    <p key={r} className="text-sm leading-5 text-slate-700">
+                      {r}
+                    </p>
+                  ))}
+                </div>
+                <details className="group mt-1 text-xs print:hidden">
+                  <summary className="cursor-pointer text-slate-500 hover:text-slate-700">
+                    Show the FDA label wording
+                  </summary>
+                  <div className="mt-1.5 flex flex-col gap-1">
+                    <p className="font-medium text-slate-600">{c.headline}</p>
+                    <p className="whitespace-pre-line leading-[18px] text-slate-500">{c.detail}</p>
+                  </div>
+                </details>
               </div>
             ))}
           </div>

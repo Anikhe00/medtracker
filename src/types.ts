@@ -48,6 +48,8 @@ export interface ConflictItem {
   severity: Severity;
   headline: string;
   detail: string;
+  /** Plain-language reasons this pair is a problem. Missing on checks saved before this was added. */
+  reasons?: string[];
 }
 
 export interface ResultData {
