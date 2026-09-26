@@ -144,6 +144,9 @@ export default function BackupModal({ onClose }: { onClose: () => void }) {
                 setImportState("idle");
               }}
               placeholder="MEDTRACKER-V1:..."
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
               rows={5}
               className="w-full resize-none rounded-lg border border-slate-200 bg-slate-50 p-3 font-mono text-[11px] leading-[16px] text-slate-700 focus:outline-none"
             />

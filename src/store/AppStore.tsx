@@ -24,16 +24,42 @@ function encodeBackup(state: PersistedState): string {
   return BACKUP_PREFIX + btoa(binary);
 }
 
-function decodeBackup(code: string): PersistedState {
-  const trimmed = code.trim();
-  if (!trimmed.startsWith(BACKUP_PREFIX)) {
-    throw new Error("That doesn't look like a MedTracker transfer code.");
+// Codes usually travel through a chat app, email or notes app before they're
+// pasted, and those can wrap lines, add invisible characters, surround the
+// code with other text, or swap the hyphen for a dash. Look for the code
+// inside whatever was pasted instead of requiring an exact match.
+const BACKUP_PATTERN = /MEDTRACKER\s*[-\u2010-\u2015\u2212]\s*V1\s*:([A-Za-z0-9+/=_\-\s\u200B-\u200D\u2060\uFEFF]*)/i;
+
+function tryDecodePayload(raw: string): any {
+  let payload = raw.replace(/[^A-Za-z0-9+/_-]/g, "").replace(/-/g, "+").replace(/_/g, "/");
+  payload += "=".repeat((4 - (payload.length % 4)) % 4);
+  try {
+    const binary = atob(payload);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    return undefined;
   }
-  const binary = atob(trimmed.slice(BACKUP_PREFIX.length));
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  const parsed = JSON.parse(new TextDecoder().decode(bytes));
+}
+
+function decodeBackup(code: string): PersistedState {
+  const match = BACKUP_PATTERN.exec(code);
+  if (!match) {
+    throw new Error("That doesn't look like a MedTracker transfer code. Copy the whole code, starting with MEDTRACKER-V1:");
+  }
+  // Anything typed after the code (a sign-off, say) gets captured too, so if
+  // the full capture doesn't decode, retry without its trailing words.
+  const chunks = match[1].split(/\s+/).filter(Boolean);
+  let parsed;
+  for (let n = chunks.length; n > 0 && parsed === undefined; n--) {
+    parsed = tryDecodePayload(chunks.slice(0, n).join(""));
+  }
+  if (parsed === undefined) {
+    throw new Error("That code is incomplete or was changed while copying. Copy the whole code again and paste it here.");
+  }
   if (
+    !parsed ||
     !Array.isArray(parsed.medications) ||
     !Array.isArray(parsed.allergies) ||
     !Array.isArray(parsed.conditions) ||
