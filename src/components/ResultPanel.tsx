@@ -87,6 +87,8 @@ export default function ResultPanel({
   onDecide,
   onConfirm,
   confirmLabel,
+  onDecline,
+  declineLabel,
   onDelete,
   existingMedicationNames,
 }: {
@@ -99,6 +101,9 @@ export default function ResultPanel({
   /** Persistent confirm action shown regardless of outcome, used by batch add-flows to finalize. */
   onConfirm?: () => void;
   confirmLabel?: string;
+  /** Lets batch add-flows back out without saving. Only shown when an interaction was found. */
+  onDecline?: () => void;
+  declineLabel?: string;
   /** Deletes this saved check from history. Only passed for entries that exist in the log. */
   onDelete?: () => void;
   /** Current medication names, used to hide "add to medications" prompts for items already added. */
@@ -306,13 +311,24 @@ export default function ResultPanel({
       </div>
 
       {onConfirm && (
-        <button
-          type="button"
-          onClick={onConfirm}
-          className="flex w-full shrink-0 items-center justify-center rounded-lg bg-teal-700 px-4 py-2.5 shadow-xs print:hidden"
-        >
-          <span className="text-sm font-semibold text-white">{confirmLabel ?? "Continue"}</span>
-        </button>
+        <div className="flex w-full shrink-0 gap-3 print:hidden">
+          {onDecline && data.outcome === "found" && (
+            <button
+              type="button"
+              onClick={onDecline}
+              className="flex flex-1 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2.5 shadow-xs"
+            >
+              <span className="text-sm font-semibold text-slate-700">{declineLabel ?? "Don't add"}</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="flex flex-1 items-center justify-center rounded-lg bg-teal-700 px-4 py-2.5 shadow-xs"
+          >
+            <span className="text-sm font-semibold text-white">{confirmLabel ?? "Continue"}</span>
+          </button>
+        </div>
       )}
     </div>
   );
