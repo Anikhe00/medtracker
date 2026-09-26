@@ -124,10 +124,8 @@ const FALLBACK = fallbackData as unknown as Record<string, FallbackEntry>;
 /**
  * A small set of ~90 common medications' real FDA label data, fetched once at
  * build time and bundled with the app (see scripts/build-drug-fallback — the
- * data itself is genuine openFDA output, not fabricated). Used when the live
- * call can't complete — e.g. offline, or a hosting sandbox that blocks
- * outbound requests — so the checker still works for common medications
- * instead of just failing.
+ * data itself is genuine openFDA output, not fabricated). Checked before the
+ * live API, so common medications resolve instantly and still work offline.
  */
 function lookupBundledFallback(name: string): DrugSafetyInfo | null {
   const key = name.trim().toLowerCase();
@@ -197,16 +195,47 @@ async function fetchFromLiveApi(trimmed: string, signal?: AbortSignal): Promise<
   return null;
 }
 
-/**
- * Drug-safety lookup against the FDA's openFDA drug label API (no API key
- * required), falling back to a bundled snapshot of real FDA data for common
- * medications if the live call fails (e.g. offline, or blocked by a hosting
- * sandbox's network policy). Returns null only when neither source has a
- * label on file for this name — a real, expected outcome for less common
- * names, not an error.
- */
 const safetyInfoCache = new Map<string, Promise<DrugSafetyInfo | null>>();
 
+const STORED_LABELS_KEY = "medtracker.drugLabels.v1";
+const STORED_LABEL_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+type StoredLabels = Record<string, { at: number; info: DrugSafetyInfo | null }>;
+
+function readStoredLabels(): StoredLabels {
+  try {
+    return JSON.parse(localStorage.getItem(STORED_LABELS_KEY) ?? "{}") as StoredLabels;
+  } catch {
+    return {};
+  }
+}
+
+function readStoredLabel(key: string): { info: DrugSafetyInfo | null } | undefined {
+  const entry = readStoredLabels()[key];
+  if (!entry || Date.now() - entry.at > STORED_LABEL_MAX_AGE_MS) return undefined;
+  return entry;
+}
+
+function storeLabel(key: string, info: DrugSafetyInfo | null) {
+  try {
+    const all = readStoredLabels();
+    for (const [k, v] of Object.entries(all)) {
+      if (Date.now() - v.at > STORED_LABEL_MAX_AGE_MS) delete all[k];
+    }
+    all[key] = { at: Date.now(), info };
+    localStorage.setItem(STORED_LABELS_KEY, JSON.stringify(all));
+  } catch {
+    // Storage full or unavailable: the in-memory cache still covers this visit.
+  }
+}
+
+/**
+ * Drug-safety lookup: the bundled snapshot of real FDA label data for common
+ * medications first, then labels saved from earlier live lookups, then the
+ * FDA's openFDA drug label API (no API key required). Returns null only when
+ * no source has a label on file for this name — a real, expected outcome for
+ * less common names, not an error.
+ */
 export function fetchDrugSafetyInfo(name: string, signal?: AbortSignal): Promise<DrugSafetyInfo | null> {
   const trimmed = coreDrugName(name).replace(/"/g, "");
   if (!trimmed) return Promise.resolve(null);
@@ -216,20 +245,22 @@ export function fetchDrugSafetyInfo(name: string, signal?: AbortSignal): Promise
   const key = trimmed.toLowerCase();
   const cached = safetyInfoCache.get(key);
   if (cached) return cached;
-  const pending = lookupDrugSafetyInfo(trimmed, signal);
+  const pending = lookupDrugSafetyInfo(trimmed, key, signal);
   safetyInfoCache.set(key, pending);
   pending.catch(() => safetyInfoCache.delete(key));
   return pending;
 }
 
-async function lookupDrugSafetyInfo(trimmed: string, signal?: AbortSignal): Promise<DrugSafetyInfo | null> {
-  try {
-    const live = await fetchFromLiveApi(trimmed, signal);
-    return live ?? lookupBundledFallback(trimmed);
-  } catch (err) {
-    if (err instanceof DOMException && err.name === "AbortError") throw err;
-    const fallback = lookupBundledFallback(trimmed);
-    if (fallback) return fallback;
-    throw err;
-  }
+async function lookupDrugSafetyInfo(trimmed: string, key: string, signal?: AbortSignal): Promise<DrugSafetyInfo | null> {
+  // The bundled copy is the same FDA label data, already on the device. Each
+  // live lookup downloads up to 15 full labels, which is the slow part, so
+  // only go live for names the bundle doesn't cover.
+  const bundled = lookupBundledFallback(trimmed);
+  if (bundled) return bundled;
+  const stored = readStoredLabel(key);
+  if (stored) return stored.info;
+
+  const live = await fetchFromLiveApi(trimmed, signal);
+  storeLabel(key, live);
+  return live;
 }
