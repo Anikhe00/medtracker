@@ -1,0 +1,166 @@
+import { useMemo, useState } from "react";
+import Sidebar, { type NavKey } from "../components/Sidebar";
+import SearchInput from "../components/SearchInput";
+import ListRow from "../components/ListRow";
+import AllergyDetailPanel from "../components/AllergyDetailPanel";
+import AllergyFormPanel, { type AllergyValues } from "../components/AllergyFormPanel";
+import EmptyState from "../components/EmptyState";
+import plusIcon from "../assets/icons/plus.svg";
+import shieldAlertIcon from "../assets/icons/shield-alert.svg";
+import { useAppStore, slugify } from "../store/AppStore";
+
+type FlowStep = "closed" | "entry";
+type ViewMode = "view" | "edit";
+
+export default function AllergiesScreen({
+  onNavigate,
+}: {
+  onNavigate?: (key: NavKey) => void;
+}) {
+  const { allergies, addAllergy, updateAllergy, removeAllergy } = useAppStore();
+  const [listQuery, setListQuery] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(allergies[0]?.id ?? null);
+  const [viewMode, setViewMode] = useState<ViewMode>("view");
+
+  const [flowStep, setFlowStep] = useState<FlowStep>("closed");
+
+  const filtered = useMemo(
+    () => allergies.filter((a) => a.name.toLowerCase().includes(listQuery.toLowerCase())),
+    [allergies, listQuery],
+  );
+
+  const selected = allergies.find((a) => a.id === selectedId) ?? null;
+
+  function openAdd() {
+    setFlowStep("entry");
+  }
+
+  function closeAddFlow() {
+    setFlowStep("closed");
+  }
+
+  function handleEntrySave(values: AllergyValues) {
+    addAllergy({
+      name: values.name,
+      severityLabel: values.severity,
+      reactionName: values.reactionName,
+      reactionSeverity: `${values.severity} reaction`,
+    });
+    setSelectedId(slugify(values.name));
+    setViewMode("view");
+    closeAddFlow();
+  }
+
+  const addPanel = (
+    <AllergyFormPanel mode="add" onClose={closeAddFlow} onSave={handleEntrySave} submitLabel="Add allergy" />
+  );
+
+  if (allergies.length === 0 && flowStep === "closed") {
+    return (
+      <div className="flex h-screen w-full items-start bg-white">
+        <div className="flex min-h-0 h-full flex-1 w-full items-start overflow-hidden border border-slate-200 bg-white">
+          <Sidebar active="allergies" onNavigate={onNavigate} />
+          <div className="flex h-full min-w-0 flex-1 flex-col gap-6 px-8 py-5">
+            <div className="flex w-full items-center gap-5">
+              <p className="flex-1 text-xl font-semibold text-[#1a1a1a]">Allergies</p>
+              <button
+                type="button"
+                onClick={openAdd}
+                className="flex shrink-0 items-center gap-1.5 rounded-lg bg-teal-700 px-3 py-2 shadow-xs"
+              >
+                <img src={plusIcon} alt="" className="size-4" />
+                <span className="text-sm font-semibold text-white">Add allergy</span>
+              </button>
+            </div>
+            <EmptyState
+              icon={<img src={shieldAlertIcon} alt="" className="size-7" />}
+              title="No allergies recorded"
+              description="Add any known allergies so we can check new medications against them automatically, from day one."
+              ctaLabel="Add your first allergy"
+              onCta={openAdd}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-screen w-full flex-col items-start bg-white">
+      <div className="flex min-h-0 flex-1 w-full items-start overflow-hidden border border-slate-200 bg-white">
+        <Sidebar active="allergies" onNavigate={onNavigate} />
+
+        <div className="flex h-full min-w-0 max-w-[480px] flex-1 flex-col gap-6 overflow-hidden border-r border-slate-200 bg-white px-8 py-5">
+          <div className="flex w-full items-center gap-5">
+            <p className="flex-1 text-xl font-semibold text-[#1a1a1a]">Allergies</p>
+            <button
+              type="button"
+              onClick={openAdd}
+              disabled={flowStep !== "closed"}
+              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-teal-700 px-3 py-2 shadow-xs disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <img src={plusIcon} alt="" className="size-4" />
+              <span className="text-sm font-semibold text-white">Add allergy</span>
+            </button>
+          </div>
+
+          {allergies.length > 0 && <SearchInput value={listQuery} onChange={setListQuery} />}
+
+          <div className="flex w-full flex-col gap-3 overflow-y-auto">
+            {filtered.map((allergy) => (
+              <ListRow
+                key={allergy.id}
+                title={allergy.name}
+                subtitle={allergy.severityLabel}
+                active={allergy.id === selectedId && flowStep === "closed"}
+                onClick={() => {
+                  if (flowStep !== "closed") return;
+                  setSelectedId(allergy.id);
+                  setViewMode("view");
+                }}
+              />
+            ))}
+          </div>
+        </div>
+
+        {flowStep !== "closed" ? (
+          addPanel
+        ) : viewMode === "edit" && selected ? (
+          <AllergyFormPanel
+            mode="edit"
+            initialValues={{
+              name: selected.name,
+              reactionName: selected.reactionName,
+              severity: selected.severityLabel,
+            }}
+            onClose={() => setViewMode("view")}
+            onSave={({ name, reactionName, severity }) => {
+              updateAllergy(selected.id, {
+                name,
+                severityLabel: severity,
+                reactionName,
+                reactionSeverity: `${severity} reaction`,
+              });
+              setViewMode("view");
+            }}
+            submitLabel="Save"
+          />
+        ) : selected ? (
+          <AllergyDetailPanel
+            allergy={selected}
+            onEdit={() => setViewMode("edit")}
+            onDelete={() => {
+              removeAllergy(selected.id);
+              setSelectedId(null);
+            }}
+          />
+        ) : (
+          <div className="flex h-full min-w-0 flex-1 items-center justify-center px-8 py-5">
+            <p className="text-sm text-slate-500">Select an allergy to see its details.</p>
+          </div>
+        )}
+      </div>
+
+    </div>
+  );
+}
